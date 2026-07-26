@@ -22,8 +22,7 @@
 ├── gemini-extension.json                # 已提交的 Gemini 轻量 Manifest
 ├── plugins/feishu-open-platform/        # 唯一插件源码
 ├── docs/                                # 自动生成的插件、Agent、Skill、Command、Harness 目录
-├── tools/                               # 生成器和校验器
-└── tests/                               # 市场与生成器测试
+└── tools/                               # Adapter、生成器、校验器及 tools/tests
 ```
 
 运行 `make generate-all` 后，还会在本地生成 `.codex/`、`.opencode/`、`.copilot/` 以及 Gemini 的 `agents/`、`skills/`、`commands/`。这些转换树体积会随插件数量增长，因此由 Git 忽略，不进入提交。
@@ -37,6 +36,24 @@ make garden STRICT=1
 make validate
 make test
 make release-check
+```
+
+生成器同时兼容上游调用风格：
+
+```bash
+make generate HARNESS=codex
+make generate HARNESS=gemini PLUGIN=feishu-open-platform
+python3 tools/generate.py --harness opencode --all --prune --strict
+python3 tools/generate.py --harness cursor --all --output-root /tmp/agents-output
+```
+
+生成后可按上游方式安装或卸载本地 OpenCode/Copilot symlink：
+
+```bash
+make install-opencode
+make uninstall-opencode
+make install-copilot
+make uninstall-copilot
 ```
 
 `plugins/` 和 `.claude-plugin/marketplace.json` 是唯一源码。Git 只提交 `.agents/plugins/marketplace.json`、插件内 `.codex-plugin/plugin.json`、`.cursor-plugin/`、`gemini-extension.json` 和 `docs/` 等轻量生成物；其他 Harness 转换树在 clone 后按需生成。CI 会检查轻量生成物漂移，并重新生成全部运行时产物进行结构校验和测试。

@@ -23,6 +23,7 @@ class OpenCodeAdapter(HarnessAdapter):
     clean_paths = (".opencode", "opencode.json")
 
     def emit_plugin(self, plugin: PluginSource) -> EmitResult:
+        before = len(self._written)
         result = EmitResult()
         for agent in plugin.agents:
             model = resolve_agent_model(agent, self.harness_id, result)
@@ -56,10 +57,9 @@ class OpenCodeAdapter(HarnessAdapter):
             content = render_frontmatter(fields)
             content += rewrite_tool_references(command.body, self.harness_id)
             self.write(Path(".opencode") / "commands" / f"{plugin.name}__{command.name}.md", content)
+        result.written.extend(self._written[before:])
         return result
 
     def emit_global(self, plugins: list[PluginSource]) -> EmitResult:
-        path = self.path("opencode.json")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"$schema": "https://opencode.ai/config.json"}, indent=2) + "\n", encoding="utf-8")
-        return EmitResult()
+        path = self.write("opencode.json", json.dumps({"$schema": "https://opencode.ai/config.json"}, indent=2))
+        return EmitResult(written=[path])

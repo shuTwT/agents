@@ -21,6 +21,8 @@ jobs:
         run: make check-drift
       - name: Generate all harness runtime artifacts
         run: make generate-all
+      - name: Check agent name collisions
+        run: python3 tools/check_agent_name_collisions.py --fail-on-duplicates
       - name: Run repository garden
         run: make garden STRICT=1
       - name: Generate and validate marketplace artifacts

@@ -151,8 +151,8 @@ def render_docs(root: Path) -> dict[str, str]:
     }
 
 
-def generate_docs(root: Path) -> int:
-    rendered = render_docs(root)
+def generate_docs(root: Path, *, source_root: Path | None = None) -> int:
+    rendered = render_docs(source_root or root)
     for relative, content in rendered.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)

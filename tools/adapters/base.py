@@ -11,6 +11,9 @@ from pathlib import Path
 
 from .capabilities import TOOL_NAME_MAPS, resolve_model
 
+WORKTREE = Path(__file__).resolve().parents[2]
+PLUGINS_DIR = WORKTREE / "plugins"
+
 
 def read_file(path: Path) -> str:
     try:
@@ -131,6 +134,25 @@ def h1_from_body(body: str) -> str:
     return ""
 
 
+def context_paragraph(body: str, max_chars: int = 300) -> str:
+    """Return a compact first prose paragraph for target manifest summaries."""
+    paragraphs = re.split(r"\n\s*\n", body.strip())
+    for paragraph in paragraphs:
+        text = " ".join(
+            line.strip()
+            for line in paragraph.splitlines()
+            if line.strip() and not line.lstrip().startswith(("#", "```"))
+        )
+        if text:
+            return text[:max_chars].rstrip()
+    return ""
+
+
+def token_estimate(text: str) -> int:
+    """Cheap deterministic estimate used by static tooling."""
+    return max(1, (len(text) + 3) // 4) if text else 0
+
+
 def normalize_tools(value) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
@@ -200,12 +222,16 @@ class AgentSource:
     def tools(self) -> list[str]:
         return normalize_tools(self.frontmatter.get("tools", self.frontmatter.get("allowed-tools", [])))
 
+    @property
+    def color(self) -> str:
+        return str(self.frontmatter.get("color", "") or "").strip()
+
 
 @dataclass
 class SkillSource:
     plugin: str
     name: str
-    path: Path
+    dir: Path
     frontmatter: dict
     body: str
 
@@ -215,13 +241,22 @@ class SkillSource:
 
     @property
     def references_dir(self) -> Path | None:
-        path = self.path.parent / "references"
+        path = self.dir / "references"
         return path if path.is_dir() else None
 
     @property
     def assets_dir(self) -> Path | None:
-        path = self.path.parent / "assets"
+        path = self.dir / "assets"
         return path if path.is_dir() else None
+
+    @property
+    def path(self) -> Path:
+        """Local compatibility alias for the canonical SKILL.md file."""
+        return self.dir / "SKILL.md"
+
+    @property
+    def body_bytes(self) -> int:
+        return len(self.body.encode("utf-8"))
 
 
 @dataclass
@@ -244,12 +279,12 @@ class CommandSource:
 @dataclass
 class PluginSource:
     name: str
-    path: Path
+    dir: Path
     plugin_json: dict
-    marketplace_entry: dict
     agents: list[AgentSource] = field(default_factory=list)
     skills: list[SkillSource] = field(default_factory=list)
     commands: list[CommandSource] = field(default_factory=list)
+    marketplace_entry: dict = field(default_factory=dict)
 
     @property
     def version(self) -> str:
@@ -267,14 +302,21 @@ class PluginSource:
     def interface(self) -> dict:
         return self.plugin_json.get("interface", {}) or {}
 
+    @property
+    def path(self) -> Path:
+        """Local compatibility alias for the plugin directory."""
+        return self.dir
+
 
 @dataclass
 class EmitResult:
     written: list[Path] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def extend(self, other: "EmitResult") -> None:
         self.written.extend(other.written)
+        self.skipped.extend(other.skipped)
         self.warnings.extend(other.warnings)
 
 
@@ -291,7 +333,7 @@ def _component_files(plugin_dir: Path) -> tuple[list[AgentSource], list[SkillSou
         if not path.is_file():
             continue
         fields, body = parse_frontmatter(read_file(path))
-        skills.append(SkillSource(plugin_dir.name, str(fields.get("name", directory.name)), path, fields, body))
+        skills.append(SkillSource(plugin_dir.name, str(fields.get("name", directory.name)), directory, fields, body))
 
     commands: list[CommandSource] = []
     for path in sorted((plugin_dir / "commands").glob("*.md")) if (plugin_dir / "commands").is_dir() else []:
@@ -300,7 +342,49 @@ def _component_files(plugin_dir: Path) -> tuple[list[AgentSource], list[SkillSou
     return agents, skills, commands
 
 
-def load_plugins(root: Path) -> list[PluginSource]:
+def _marketplace_entries(root: Path) -> dict[str, dict]:
+    path = root / ".claude-plugin" / "marketplace.json"
+    if not path.is_file():
+        return {}
+    return {
+        str(entry.get("name", "")): entry
+        for entry in read_json(path).get("plugins", [])
+        if isinstance(entry, dict)
+    }
+
+
+def load_plugin(plugin_name: str, root: Path = WORKTREE) -> PluginSource | None:
+    """Load one local plugin using the same public entry point as upstream."""
+    plugin_dir = root / "plugins" / plugin_name
+    manifest_path = plugin_dir / ".claude-plugin" / "plugin.json"
+    if not manifest_path.is_file():
+        return None
+    manifest = read_json(manifest_path)
+    agents, skills, commands = _component_files(plugin_dir)
+    return PluginSource(
+        name=str(manifest.get("name", plugin_name)),
+        dir=plugin_dir,
+        plugin_json=manifest,
+        agents=agents,
+        skills=skills,
+        commands=commands,
+        marketplace_entry=_marketplace_entries(root).get(plugin_name, {}),
+    )
+
+
+def list_plugins(root: Path = WORKTREE) -> list[str]:
+    """List source plugin directories, matching the upstream helper."""
+    plugins_root = root / "plugins"
+    if not plugins_root.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in plugins_root.iterdir()
+        if path.is_dir() and (path / ".claude-plugin" / "plugin.json").is_file()
+    )
+
+
+def load_plugins(root: Path = WORKTREE) -> list[PluginSource]:
     marketplace = read_json(root / ".claude-plugin" / "marketplace.json")
     result: list[PluginSource] = []
     for entry in marketplace.get("plugins", []):
@@ -308,22 +392,10 @@ def load_plugins(root: Path) -> list[PluginSource]:
         if not isinstance(source, str) or not source.startswith("./plugins/"):
             continue
         plugin_dir = root / source[2:]
-        manifest_path = plugin_dir / ".claude-plugin" / "plugin.json"
-        if not manifest_path.is_file():
-            continue
-        manifest = read_json(manifest_path)
-        agents, skills, commands = _component_files(plugin_dir)
-        result.append(
-            PluginSource(
-                name=str(manifest.get("name", entry.get("name", plugin_dir.name))),
-                path=plugin_dir,
-                plugin_json=manifest,
-                marketplace_entry=entry,
-                agents=agents,
-                skills=skills,
-                commands=commands,
-            )
-        )
+        plugin = load_plugin(plugin_dir.name, root)
+        if plugin is not None:
+            plugin.marketplace_entry = entry
+            result.append(plugin)
     return result
 
 
@@ -333,23 +405,48 @@ class HarnessAdapter(ABC):
     harness_id: str = ""
     clean_paths: tuple[str, ...] = ()
 
-    def __init__(self, root: Path):
-        self.root = root
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        output_root: Path | None = None,
+        source_root: Path | None = None,
+        repo_root: Path | None = None,
+    ):
+        self.root = Path(output_root or root or WORKTREE)
+        self.output_root = self.root
+        self.source_root = Path(source_root or repo_root or root or WORKTREE)
+        self._written: list[Path] = []
+
+    @property
+    def capabilities(self):
+        from .capabilities import CAPABILITIES
+
+        return CAPABILITIES[self.harness_id]
 
     def path(self, relative: str | Path) -> Path:
-        return self.root / relative
+        path = (self.root / relative).resolve()
+        root = self.root.resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"refusing to write outside output_root: {path}")
+        return path
 
     def write(self, relative: str | Path, content: str) -> Path:
         path = self.path(relative)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content.rstrip() + "\n", encoding="utf-8")
-        return Path(relative)
+        self._written.append(path)
+        return path
+
+    def write_bytes(self, relative: str | Path, content: bytes) -> Path:
+        path = self.path(relative)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        self._written.append(path)
+        return path
 
     def mirror_file(self, source: Path, relative: str | Path) -> Path:
-        destination = self.path(relative)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-        return Path(relative)
+        return self.write_bytes(relative, source.read_bytes())
 
     def clean(self) -> None:
         for relative in self.clean_paths:
@@ -359,8 +456,9 @@ class HarnessAdapter(ABC):
             elif path.exists():
                 path.unlink()
 
-    def emit_all(self, plugins: list[PluginSource]) -> EmitResult:
-        self.clean()
+    def emit_all(self, plugins: list[PluginSource], *, clean: bool = True) -> EmitResult:
+        if clean:
+            self.clean()
         result = EmitResult()
         for plugin in plugins:
             result.extend(self.emit_plugin(plugin))
@@ -373,3 +471,7 @@ class HarnessAdapter(ABC):
 
     def emit_global(self, plugins: list[PluginSource]) -> EmitResult:
         return EmitResult()
+
+    def strip_claude_tool_refs(self, body: str, tool_case: str = "lower") -> str:
+        """Upstream-compatible wrapper around the shared tool rewriter."""
+        return rewrite_tool_references(body, self.harness_id)

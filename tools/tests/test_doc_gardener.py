@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.garden import run_garden
+from tools.doc_gardener import run_garden
 from tools.generate import ROOT
 
 

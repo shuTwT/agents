@@ -8,6 +8,8 @@ This repository is a portable agent-plugin marketplace for Feishu Open Platform 
 - Keep `.claude-plugin/marketplace.json` as the Claude Code marketplace source.
 - Generate harness artifacts with `python3 tools/generate.py`.
 - Generate all target harnesses with `make generate-all`.
+- Keep tooling tests under `tools/tests/` to match the upstream repository layout.
+- Use `tools/validate_generated.py` and `tools/doc_gardener.py`; legacy wrappers remain for compatibility.
 - Commit only lightweight generated install metadata under `.agents/plugins/`, `plugins/*/.codex-plugin/`, `.cursor-plugin/`, plus `gemini-extension.json` and `docs/`.
 - Keep runtime output under `.codex/`, `.opencode/`, `.copilot/`, `agents/`, `skills/`, and `commands/` gitignored.
 - Do not hand-edit generated registries, manifests, runtime output, or catalogs.

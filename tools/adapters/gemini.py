@@ -49,6 +49,7 @@ class GeminiAdapter(HarnessAdapter):
     clean_paths = ("gemini-extension.json", "agents", "skills", "commands")
 
     def emit_plugin(self, plugin: PluginSource) -> EmitResult:
+        before = len(self._written)
         result = EmitResult()
         for skill in plugin.skills:
             skill_id = f"{plugin.name}__{skill.name}"
@@ -77,10 +78,12 @@ class GeminiAdapter(HarnessAdapter):
                 prompt = self._injected_command(plugin, command)
             self.write(Path("commands") / plugin.name / f"{command.name}.toml", _toml_command(description, prompt))
 
+        result.written.extend(self._written[before:])
         return result
 
     def emit_global(self, plugins: list[PluginSource]) -> EmitResult:
-        marketplace = json.loads((self.root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+        before = len(self._written)
+        marketplace = json.loads((self.source_root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
         metadata = marketplace.get("metadata", {})
         extension = {
             "name": marketplace.get("name", "agent-marketplace"),
@@ -89,7 +92,7 @@ class GeminiAdapter(HarnessAdapter):
             "contextFileName": "AGENTS.md",
         }
         self.write_json("gemini-extension.json", extension)
-        return EmitResult()
+        return EmitResult(written=self._written[before:])
 
     def _inline_command(self, plugin: PluginSource, command) -> str:
         lines = [
@@ -126,7 +129,4 @@ class GeminiAdapter(HarnessAdapter):
         return "\n".join(lines)
 
     def write_json(self, relative: str | Path, value: dict) -> Path:
-        path = self.path(relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return Path(relative)
+        return self.write(relative, json.dumps(value, ensure_ascii=False, indent=2))

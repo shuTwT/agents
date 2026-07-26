@@ -15,7 +15,7 @@ from tools.generate import (
     parse_frontmatter,
     render_docs,
 )
-from tools.validate import validate_repo
+from tools.validate_generated import validate_repo
 
 
 class MarketplaceTests(unittest.TestCase):

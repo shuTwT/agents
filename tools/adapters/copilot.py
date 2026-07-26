@@ -22,6 +22,7 @@ class CopilotAdapter(HarnessAdapter):
     clean_paths = (".copilot",)
 
     def emit_plugin(self, plugin: PluginSource) -> EmitResult:
+        before = len(self._written)
         result = EmitResult()
         for agent in plugin.agents:
             for field in sorted(set(agent.frontmatter) - {"name", "description", "model", "tools", "allowed-tools"}):
@@ -78,4 +79,5 @@ class CopilotAdapter(HarnessAdapter):
             index_lines.extend(["", "Commands: " + ", ".join(f"`/{plugin.name}:{c.name}`" for c in plugin.commands) + "."])
         index_lines.extend(["", "{{args}}"])
         self.write(Path(".copilot/commands") / plugin.name / "index.md", render_frontmatter({"description": plugin.description}) + "\n".join(index_lines))
+        result.written.extend(self._written[before:])
         return result

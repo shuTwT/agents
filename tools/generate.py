@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import tempfile
@@ -84,21 +85,95 @@ def _selected_harnesses(harness: str) -> list[str]:
     raise ValueError(f"unknown harness: {harness}")
 
 
-def _generate(root: Path, *, harness: str, docs: bool) -> tuple[int, list[str]]:
+def get_adapter(
+    harness_id: str,
+    output_root: Path,
+    *,
+    source_root: Path = ROOT,
+):
+    """Return an adapter using the same factory contract as upstream."""
+    try:
+        adapter_type = ADAPTERS[harness_id]
+    except KeyError as exc:
+        raise ValueError(f"unknown harness: {harness_id}") from exc
+    return adapter_type(output_root=output_root, source_root=source_root)
+
+
+def _validate_output_root(output_root: Path) -> str | None:
+    """Reject destructive generation against broad or unrelated directories."""
+    resolved = output_root.resolve()
+    if resolved == Path("/"):
+        return "refusing to operate on the filesystem root"
+    if os.environ.get("AGENTS_ALLOW_ANY_OUTPUT_ROOT") == "1":
+        return None
+    allowed_roots = (
+        ROOT.resolve(),
+        Path("/tmp").resolve(),
+        Path("/private/tmp").resolve(),
+        Path("/var/folders").resolve(),
+        Path("/private/var/folders").resolve(),
+    )
+    for allowed in allowed_roots:
+        if resolved == allowed or resolved.is_relative_to(allowed):
+            return None
+    return (
+        f"refusing to clean generated paths under {resolved}; use the repository, "
+        "a temporary directory, or set AGENTS_ALLOW_ANY_OUTPUT_ROOT=1"
+    )
+
+
+def _generate(
+    root: Path,
+    *,
+    harness: str,
+    docs: bool,
+    plugin_name: str | None = None,
+    output_root: Path | None = None,
+    clean: bool = True,
+) -> tuple[int, list[str]]:
+    target_root = output_root or root
     plugins = load_plugins(root) if harness != "none" else []
+    selected_plugins = plugins
+    if plugin_name is not None:
+        selected_plugins = [plugin for plugin in plugins if plugin.name == plugin_name]
+        if not selected_plugins:
+            raise ValueError(f"plugin not found: {plugin_name}")
     warnings: list[str] = []
+    written_paths: set[Path] = set()
     for harness_id in _selected_harnesses(harness):
-        result = ADAPTERS[harness_id](root).emit_all(plugins)
+        adapter = get_adapter(harness_id, target_root, source_root=root)
+        if plugin_name is None:
+            result = adapter.emit_all(selected_plugins, clean=clean)
+        else:
+            result = adapter.emit_plugin(selected_plugins[0])
+            result.extend(adapter.emit_global(plugins))
+        written_paths.update(path.resolve() for path in result.written)
         warnings.extend(f"{harness_id}: {warning}" for warning in result.warnings)
     if docs:
-        generate_docs(root)
-    return len(generated_relative_paths(root, harness=harness, docs=docs)), warnings
+        generate_docs(target_root, source_root=root)
+        written_paths.update((target_root / relative).resolve() for relative in DOC_FILES)
+    return len(written_paths), warnings
 
 
-def generate(root: Path = ROOT, *, harness: str = "all", docs: bool | None = None) -> int:
+def generate(
+    root: Path = ROOT,
+    *,
+    harness: str = "all",
+    docs: bool | None = None,
+    plugin_name: str | None = None,
+    output_root: Path | None = None,
+    clean: bool = True,
+) -> int:
     if docs is None:
         docs = harness == "all"
-    written, warnings = _generate(root, harness=harness, docs=docs)
+    written, warnings = _generate(
+        root,
+        harness=harness,
+        docs=docs,
+        plugin_name=plugin_name,
+        output_root=output_root,
+        clean=clean and plugin_name is None,
+    )
     for warning in warnings:
         print(f"[warning] {warning}")
     return written
@@ -116,12 +191,41 @@ def clean_generated(root: Path = ROOT, *, harness: str = "all", docs: bool | Non
     if docs is None:
         docs = harness == "all"
     for harness_id in _selected_harnesses(harness):
-        ADAPTERS[harness_id](root).clean()
+        get_adapter(harness_id, root, source_root=ROOT).clean()
     if docs:
         for relative in DOC_FILES:
             path = root / relative
             if path.exists():
                 path.unlink()
+
+
+def clean_output(harness_id: str, output_root: Path) -> int:
+    """Upstream-compatible single-harness clean helper."""
+    adapter = get_adapter(harness_id, output_root)
+    existing = sum(adapter.path(path).exists() for path in adapter.clean_paths)
+    adapter.clean()
+    return existing
+
+
+def prune_orphans(harness_id: str, output_root: Path, written: set[Path]) -> list[Path]:
+    """Remove generated files not written by the current complete generation."""
+    written_resolved = {path.resolve() for path in written}
+    removed: list[Path] = []
+    for relative in generated_relative_paths(output_root, harness=harness_id):
+        path = (output_root / relative).resolve()
+        if path not in written_resolved and path.is_file():
+            path.unlink()
+            removed.append(path)
+    root = output_root.resolve()
+    for removed_path in removed:
+        directory = removed_path.parent
+        while directory != root and directory.is_relative_to(root):
+            try:
+                directory.rmdir()
+            except OSError:
+                break
+            directory = directory.parent
+    return removed
 
 
 def _add_files(root: Path, paths: set[str], directory: str) -> None:
@@ -228,27 +332,55 @@ def check_generated(root: Path = ROOT, *, harness: str = "all", docs: bool | Non
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--harness", choices=(*supported_harnesses(), "all"), default="all")
+    plugin_group = parser.add_mutually_exclusive_group()
+    plugin_group.add_argument("--plugin", help="Generate one named plugin without cleaning other outputs.")
+    plugin_group.add_argument("--all", action="store_true", help="Generate every source plugin.")
     parser.add_argument("--docs-only", action="store_true", help="Generate or check only marketplace documentation.")
     parser.add_argument("--check", action="store_true", help="Check generated files without modifying the working tree.")
     parser.add_argument("--clean", action="store_true", help="Remove selected generated artifacts and exit.")
+    parser.add_argument("--prune", action="store_true", help="Prune orphan outputs; full generation already does this.")
+    parser.add_argument("--strict", action="store_true", help="Exit nonzero when generation emits a warning.")
+    parser.add_argument("--output-root", type=Path, default=ROOT, help="Target root for generated artifacts.")
     args = parser.parse_args()
     if args.docs_only and args.harness != "all":
         parser.error("--docs-only cannot be combined with --harness")
     if args.clean and args.check:
         parser.error("--clean cannot be combined with --check")
+    if args.plugin and args.clean:
+        parser.error("--clean --plugin would remove outputs for other plugins")
+    if args.plugin and args.prune:
+        parser.error("--prune requires a complete all-plugin generation")
+    if args.docs_only and (args.plugin or args.prune):
+        parser.error("--docs-only cannot be combined with plugin selection or --prune")
+    if args.check and args.output_root.resolve() != ROOT.resolve():
+        parser.error("--check compares committed repository artifacts and cannot use --output-root")
 
     harness = "none" if args.docs_only else args.harness
     docs = True if args.docs_only else harness == "all"
     label = "docs" if args.docs_only else harness
+    output_root = args.output_root.resolve()
+    safety_error = _validate_output_root(output_root)
+    if safety_error and (args.clean or not args.plugin):
+        parser.error(safety_error)
     if args.clean:
-        clean_generated(ROOT, harness=harness, docs=docs)
+        clean_generated(output_root, harness=harness, docs=docs)
         print(f"Cleaned generated artifacts for {label}.")
-        return 0
+        if not args.all:
+            return 0
     if args.check:
         return check_generated(ROOT, harness=harness, docs=docs)
-    written = generate(ROOT, harness=harness, docs=docs)
+    written, warnings = _generate(
+        ROOT,
+        harness=harness,
+        docs=docs,
+        plugin_name=args.plugin,
+        output_root=output_root,
+        clean=args.plugin is None,
+    )
+    for warning in warnings:
+        print(f"[warning] {warning}")
     print(f"Generated {written} artifact(s) for {label}.")
-    return 0
+    return 1 if args.strict and warnings else 0
 
 
 if __name__ == "__main__":

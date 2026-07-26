@@ -39,7 +39,7 @@ class CursorAdapter(HarnessAdapter):
         return EmitResult(written=[self.write_json(Path(".cursor-plugin/plugins") / f"{plugin.name}.json", manifest)])
 
     def emit_global(self, plugins: list[PluginSource]) -> EmitResult:
-        marketplace = json.loads((self.root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        marketplace = json.loads((self.source_root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
         entries = []
         for plugin in plugins:
             entry = {
@@ -74,7 +74,4 @@ class CursorAdapter(HarnessAdapter):
         return result
 
     def write_json(self, relative: str | Path, value: dict) -> Path:
-        path = self.path(relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return Path(relative)
+        return self.write(relative, json.dumps(value, ensure_ascii=False, indent=2))

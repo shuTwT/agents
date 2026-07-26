@@ -41,6 +41,7 @@ class CodexAdapter(HarnessAdapter):
                 path.unlink()
 
     def emit_plugin(self, plugin: PluginSource) -> EmitResult:
+        before = len(self._written)
         result = EmitResult()
         output_root = self.root / ".codex"
 
@@ -87,10 +88,12 @@ class CodexAdapter(HarnessAdapter):
             content += rewrite_tool_references(command.body, self.harness_id)
             self.write(Path(".codex") / "skills" / skill_name / "SKILL.md", content)
 
+        result.written.extend(self._written[before:])
         return result
 
     def emit_global(self, plugins: list[PluginSource]) -> EmitResult:
-        marketplace = json.loads((self.root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        before = len(self._written)
+        marketplace = json.loads((self.source_root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
         output = {
             "name": marketplace["name"],
             "metadata": marketplace.get("metadata", {}),
@@ -110,10 +113,7 @@ class CodexAdapter(HarnessAdapter):
                 }
             )
         self.write_json(Path(".agents/plugins/marketplace.json"), output)
-        return EmitResult()
+        return EmitResult(written=self._written[before:])
 
     def write_json(self, relative: str | Path, value: dict) -> Path:
-        path = self.path(relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return Path(relative)
+        return self.write(relative, json.dumps(value, ensure_ascii=False, indent=2))
