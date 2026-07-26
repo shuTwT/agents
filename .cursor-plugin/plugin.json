@@ -1,0 +1,11 @@
+{
+  "name": "feishu-agents",
+  "displayName": "Feishu Agents",
+  "version": "0.1.0",
+  "description": "Chinese-first agent workflows for Feishu Open Platform development",
+  "author": {
+    "name": "shuTwT",
+    "url": "https://github.com/shuTwT"
+  },
+  "license": "MIT"
+}

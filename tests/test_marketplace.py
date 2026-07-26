@@ -135,6 +135,22 @@ class MarketplaceTests(unittest.TestCase):
         self.assertEqual([entry["name"] for entry in codex["plugins"]], ["feishu-open-platform", "sample-plugin"])
         self.assertIn("sample-plugin", (repository / "docs" / "plugins.md").read_text(encoding="utf-8"))
         self.assertTrue((repository / ".codex" / "agents" / "sample-plugin__feishu-api-developer.toml").is_file())
+        self.assertTrue((repository / ".cursor-plugin" / "plugins" / "sample-plugin.json").is_file())
+        self.assertTrue((repository / ".copilot" / "agents" / "sample-plugin__feishu-api-developer.agent.md").is_file())
+        self.assertTrue((repository / "agents" / "sample-plugin__feishu-api-developer.md").is_file())
+        findings = validate_repo(repository, require_generated=True)
+        self.assertEqual(
+            [finding for finding in findings if finding.severity == "error"],
+            [],
+            [f"{finding.path}: {finding.message}" for finding in findings if finding.severity == "error"],
+        )
+
+        shutil.rmtree(repository / "plugins" / "sample-plugin")
+        marketplace["plugins"] = [entry for entry in marketplace["plugins"] if entry["name"] != "sample-plugin"]
+        marketplace_path.write_text(json.dumps(marketplace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        generate(repository, harness="all", docs=True)
+        self.assertFalse((repository / ".cursor-plugin" / "plugins" / "sample-plugin.json").exists())
+        self.assertFalse((repository / ".copilot" / "agents" / "sample-plugin__feishu-api-developer.agent.md").exists())
 
     def test_version_mismatch_is_reported(self):
         temporary, repository = self.copy_repository()

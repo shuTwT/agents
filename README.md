@@ -18,8 +18,12 @@
 .
 ├── .claude-plugin/marketplace.json      # Claude Code 市场源
 ├── .agents/plugins/marketplace.json     # Codex 市场清单
+├── .cursor-plugin/                      # Cursor marketplace manifest
+├── .copilot/                            # Copilot generated agents/skills/commands
+├── agents/, skills/, commands/          # Gemini generated artifacts
+├── gemini-extension.json                # Gemini extension manifest
 ├── plugins/feishu-open-platform/        # 唯一插件源码
-├── docs/                                # 自动生成的插件、Agent、Skill、Command 目录
+├── docs/                                # 自动生成的插件、Agent、Skill、Command、Harness 目录
 ├── tools/                               # 生成器和校验器
 └── tests/                               # 市场与生成器测试
 ```
@@ -29,11 +33,12 @@
 ```bash
 make generate-all
 make check-drift
+make garden STRICT=1
 make validate
 make test
 make release-check
 ```
 
-`plugins/` 和 `.claude-plugin/marketplace.json` 是唯一源码；`.codex/`、`.opencode/`、`opencode.json`、`.codex-plugin/` 以及 `docs/` 都由生成器维护。CI 会在生成后检查提交内容是否发生漂移。
+`plugins/` 和 `.claude-plugin/marketplace.json` 是唯一源码；`.codex/`、`.opencode/`、`opencode.json`、`.codex-plugin/`、`.cursor-plugin/`、`.copilot/`、Gemini 根目录产物以及 `docs/` 都由生成器维护。CI 会在生成后检查提交内容是否发生漂移。
 
-版本采用手动 SemVer 和 `CHANGELOG.md`。当前阶段只支持 Codex、Claude Code 和 OpenCode；不内置飞书 MCP 配置，也不读取或保存飞书凭证。
+版本采用手动 SemVer 和 `CHANGELOG.md`。当前支持 Claude Code、Codex、OpenCode、Cursor、Gemini CLI 和 GitHub Copilot；不安装或调用真实 CLI，不内置飞书 MCP 配置，也不读取或保存飞书凭证。

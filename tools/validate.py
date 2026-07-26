@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate source plugins and generated Codex/OpenCode artifacts."""
+"""Validate source plugins and generated multi-harness artifacts."""
 
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from .generate import DOC_FILES, ROOT, parse_frontmatter, render_docs
+    from .adapters.capabilities import CAPABILITIES, supported_harnesses
+    from .generate import ADAPTERS, DOC_FILES, ROOT, parse_frontmatter, render_docs
 except ImportError:  # pragma: no cover - supports direct script execution.
-    from generate import DOC_FILES, ROOT, parse_frontmatter, render_docs
+    from adapters.capabilities import CAPABILITIES, supported_harnesses
+    from generate import ADAPTERS, DOC_FILES, ROOT, parse_frontmatter, render_docs
 
 
 @dataclass
@@ -141,9 +143,10 @@ def validate_source(root: Path, findings: list[Finding]) -> list[str]:
                     add(findings, "error", agent_path, f"missing frontmatter field `{field}`")
             if fields.get("name") in {"default", "worker", "explorer"}:
                 add(findings, "error", agent_path, "agent name collides with a Codex built-in")
-            if fields.get("name") and fields["name"] in names:
-                add(findings, "error", agent_path, f"agent name `{fields['name']}` is duplicated")
-            names.append(fields.get("name", agent_path.stem))
+            component_id = f"{name}__{fields.get('name', agent_path.stem)}"
+            if component_id in names:
+                add(findings, "error", agent_path, f"agent name `{component_id}` is duplicated")
+            names.append(component_id)
 
         skills_dir = plugin_dir / "skills"
         for skill_dir in sorted(path for path in skills_dir.iterdir() if path.is_dir()) if skills_dir.is_dir() else []:
@@ -206,9 +209,13 @@ def validate_generated(root: Path, findings: list[Finding], plugin_names: list[s
         add(findings, "error", codex_marketplace, "Codex marketplace plugin order or names differ from source")
     for entry in data.get("plugins", []):
         source = entry.get("source", {})
-        if source.get("source") != "local" or not source.get("path", "").startswith("./plugins/"):
+        if not isinstance(source, dict):
+            add(findings, "error", codex_marketplace, f"{entry.get('name')}: Codex source must be an object")
+            continue
+        source_path = source.get("path", "")
+        if source.get("source") != "local" or not isinstance(source_path, str) or not source_path.startswith("./plugins/"):
             add(findings, "error", codex_marketplace, f"{entry.get('name')}: invalid Codex local source")
-        source_manifest = root / source.get("path", "") / ".claude-plugin" / "plugin.json"
+        source_manifest = root / source_path / ".claude-plugin" / "plugin.json" if isinstance(source_path, str) else root / "__missing__"
         if source_manifest.is_file():
             try:
                 manifest = json.loads(source_manifest.read_text(encoding="utf-8"))
@@ -230,6 +237,71 @@ def validate_generated(root: Path, findings: list[Finding], plugin_names: list[s
         content = path.read_text(encoding="utf-8")
         if "mode: \"subagent\"" not in content or "permission:" not in content:
             add(findings, "error", path, "OpenCode agent is missing mode or permission block")
+
+    source_marketplace_data = source_data if isinstance(source_data, dict) else {}
+    required = {
+        "cursor": (root / ".cursor-plugin" / "marketplace.json", root / ".cursor-plugin" / "plugin.json"),
+        "gemini": (root / "gemini-extension.json",),
+        "copilot": (root / ".copilot",),
+    }
+    for harness_id, paths in required.items():
+        for path in paths:
+            if not path.exists():
+                add(findings, "error", path, f"{harness_id} output is missing; run the generator")
+
+    cursor_marketplace = root / ".cursor-plugin" / "marketplace.json"
+    if cursor_marketplace.is_file():
+        try:
+            cursor_data = json.loads(cursor_marketplace.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            add(findings, "error", cursor_marketplace, f"invalid JSON: {exc}")
+            cursor_data = {}
+        if [entry.get("name") for entry in cursor_data.get("plugins", [])] != plugin_names:
+            add(findings, "error", cursor_marketplace, "Cursor marketplace plugin order or names differ from source")
+        for plugin_name in plugin_names:
+            manifest = root / "plugins" / plugin_name / ".claude-plugin" / "plugin.json"
+            cursor_plugin = root / ".cursor-plugin" / "plugins" / f"{plugin_name}.json"
+            if not cursor_plugin.is_file():
+                add(findings, "error", cursor_plugin, "Cursor plugin manifest is missing")
+            elif manifest.is_file():
+                source_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+                generated_manifest = json.loads(cursor_plugin.read_text(encoding="utf-8"))
+                if generated_manifest.get("version") != source_manifest.get("version"):
+                    add(findings, "error", cursor_plugin, "version differs from source manifest")
+
+    extension_path = root / "gemini-extension.json"
+    if extension_path.is_file():
+        try:
+            extension = json.loads(extension_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            add(findings, "error", extension_path, f"invalid JSON: {exc}")
+            extension = {}
+        if extension.get("version") != source_marketplace_data.get("metadata", {}).get("version"):
+            add(findings, "error", extension_path, "version differs from marketplace metadata")
+        for plugin_name in plugin_names:
+            plugin_dir = root / "plugins" / plugin_name
+            for agent_path in (plugin_dir / "agents").glob("*.md") if (plugin_dir / "agents").is_dir() else []:
+                fields, _ = parse_frontmatter(agent_path.read_text(encoding="utf-8"))
+                output = root / "agents" / f"{plugin_name}__{fields.get('name', agent_path.stem)}.md"
+                if not output.is_file():
+                    add(findings, "error", output, "Gemini agent output is missing")
+            for skill_dir in (path for path in (plugin_dir / "skills").iterdir() if path.is_dir()) if (plugin_dir / "skills").is_dir() else []:
+                fields, _ = parse_frontmatter((skill_dir / "SKILL.md").read_text(encoding="utf-8")) if (skill_dir / "SKILL.md").is_file() else ({}, "")
+                output = root / "skills" / f"{plugin_name}__{fields.get('name', skill_dir.name)}" / "SKILL.md"
+                if not output.is_file():
+                    add(findings, "error", output, "Gemini skill output is missing")
+            for command_path in (plugin_dir / "commands").glob("*.md") if (plugin_dir / "commands").is_dir() else []:
+                output = root / "commands" / plugin_name / f"{command_path.stem}.toml"
+                if not output.is_file():
+                    add(findings, "error", output, "Gemini command output is missing")
+
+    if not (root / ".copilot" / "agents").is_dir() or not any((root / ".copilot" / "agents").iterdir()):
+        add(findings, "error", root / ".copilot" / "agents", "Copilot agent output is missing")
+
+    if set(ADAPTERS) != set(supported_harnesses()):
+        add(findings, "error", root / "tools", "adapter registry and supported harness list differ")
+    if not set(supported_harnesses()).issubset(CAPABILITIES):
+        add(findings, "error", root / "tools/adapters/capabilities.py", "capability matrix is missing a supported harness")
 
     try:
         expected_docs = render_docs(root)

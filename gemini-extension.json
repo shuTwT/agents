@@ -1,0 +1,6 @@
+{
+  "name": "feishu-agents",
+  "version": "0.1.0",
+  "description": "Chinese-first agent workflows for Feishu Open Platform development",
+  "contextFileName": "AGENTS.md"
+}
