@@ -41,6 +41,16 @@ ADAPTERS = {
     "copilot": CopilotAdapter,
 }
 
+RUNTIME_ONLY_PATHS = (
+    ".codex",
+    ".opencode",
+    "opencode.json",
+    ".copilot",
+    "agents",
+    "skills",
+    "commands",
+)
+
 
 def render_frontmatter(fields: dict, *, include_permission: bool = False) -> str:
     """Backward-compatible export for the phase-two frontmatter renderer."""
@@ -121,6 +131,7 @@ def _add_files(root: Path, paths: set[str], directory: str) -> None:
 
 
 def generated_relative_paths(root: Path, *, harness: str = "all", docs: bool = False) -> set[str]:
+    """Return every runtime artifact emitted for the selected harnesses."""
     paths: set[str] = set()
     selected = _selected_harnesses(harness)
     if "codex" in selected:
@@ -151,15 +162,49 @@ def generated_relative_paths(root: Path, *, harness: str = "all", docs: bool = F
     return paths
 
 
+def committed_generated_relative_paths(
+    root: Path,
+    *,
+    harness: str = "all",
+    docs: bool = False,
+) -> set[str]:
+    """Return generated files that are intentionally committed.
+
+    Large transformed trees are local runtime artifacts and stay gitignored.
+    Codex/Cursor registries, the Gemini extension manifest, and generated
+    catalogs remain committed so native installation and review work from a
+    fresh clone.
+    """
+    paths: set[str] = set()
+    selected = _selected_harnesses(harness)
+    if "codex" in selected:
+        marketplace = ".agents/plugins/marketplace.json"
+        if (root / marketplace).is_file():
+            paths.add(marketplace)
+        plugins_root = root / "plugins"
+        if plugins_root.is_dir():
+            for path in plugins_root.glob("*/.codex-plugin/plugin.json"):
+                if path.is_file():
+                    paths.add(path.relative_to(root).as_posix())
+    if "cursor" in selected:
+        _add_files(root, paths, ".cursor-plugin")
+    if "gemini" in selected and (root / "gemini-extension.json").is_file():
+        paths.add("gemini-extension.json")
+    if docs:
+        paths.update(DOC_FILES)
+    return paths
+
+
 def find_generated_drift(root: Path = ROOT, *, harness: str = "all", docs: bool | None = None) -> list[str]:
+    """Compare only commit-worthy generated files against a fresh generation."""
     if docs is None:
         docs = harness == "all"
     with tempfile.TemporaryDirectory(prefix="agent-marketplace-check-") as temporary:
         staged = Path(temporary) / "repo"
         shutil.copytree(root, staged, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
         _generate(staged, harness=harness, docs=docs)
-        expected = generated_relative_paths(staged, harness=harness, docs=docs)
-        actual = generated_relative_paths(root, harness=harness, docs=docs)
+        expected = committed_generated_relative_paths(staged, harness=harness, docs=docs)
+        actual = committed_generated_relative_paths(root, harness=harness, docs=docs)
         differences: list[str] = []
         differences.extend(f"[missing] {path}" for path in sorted(expected - actual))
         differences.extend(f"[extra] {path}" for path in sorted(actual - expected))
@@ -174,9 +219,9 @@ def check_generated(root: Path = ROOT, *, harness: str = "all", docs: bool | Non
     if differences:
         for difference in differences:
             print(difference)
-        print("Generated artifacts are out of date. Run `make generate-all` and commit the result.")
+        print("Committed registries or catalogs are out of date. Run `make generate-all` and commit the lightweight results.")
         return 1
-    print(f"Generated artifacts are up to date for {harness}.")
+    print(f"Committed generated artifacts are up to date for {harness}.")
     return 0
 
 

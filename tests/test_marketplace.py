@@ -6,7 +6,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.generate import ROOT, check_generated, generate, parse_frontmatter, render_docs
+from tools.generate import (
+    ROOT,
+    RUNTIME_ONLY_PATHS,
+    check_generated,
+    committed_generated_relative_paths,
+    generate,
+    parse_frontmatter,
+    render_docs,
+)
 from tools.validate import validate_repo
 
 
@@ -22,7 +30,7 @@ class MarketplaceTests(unittest.TestCase):
         return temporary, destination
 
     def test_source_repository_is_valid(self):
-        findings = validate_repo(ROOT, require_generated=True)
+        findings = validate_repo(ROOT, require_generated=False)
         errors = [finding for finding in findings if finding.severity == "error"]
         self.assertEqual(errors, [], [f"{item.path}: {item.message}" for item in errors])
 
@@ -47,14 +55,20 @@ class MarketplaceTests(unittest.TestCase):
         self.assertGreater(len(body), 100)
 
     def test_generated_opencode_agent_has_permissions(self):
-        agents = list((ROOT / ".opencode" / "agents").glob("*.md"))
+        temporary, repository = self.copy_repository()
+        self.addCleanup(temporary.cleanup)
+        generate(repository, harness="opencode", docs=False)
+        agents = list((repository / ".opencode" / "agents").glob("*.md"))
         self.assertTrue(agents)
         content = agents[0].read_text(encoding="utf-8")
         self.assertIn('mode: "subagent"', content)
         self.assertIn("permission:", content)
 
     def test_generated_codex_skills_fit_the_byte_cap(self):
-        skills = list((ROOT / ".codex" / "skills").glob("*/SKILL.md"))
+        temporary, repository = self.copy_repository()
+        self.addCleanup(temporary.cleanup)
+        generate(repository, harness="codex", docs=False)
+        skills = list((repository / ".codex" / "skills").glob("*/SKILL.md"))
         self.assertTrue(skills)
         self.assertTrue(all(len(path.read_bytes()) <= 8192 for path in skills))
 
@@ -90,6 +104,34 @@ class MarketplaceTests(unittest.TestCase):
         path.write_text(path.read_text(encoding="utf-8") + "\nmanual edit\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(check_generated(repository), 1)
+
+    def test_only_lightweight_generated_artifacts_are_committed(self):
+        committed = committed_generated_relative_paths(ROOT, harness="all", docs=True)
+        self.assertIn(".agents/plugins/marketplace.json", committed)
+        self.assertIn(".cursor-plugin/marketplace.json", committed)
+        self.assertIn("gemini-extension.json", committed)
+        self.assertIn("docs/plugins.md", committed)
+        for runtime_path in RUNTIME_ONLY_PATHS:
+            prefix = runtime_path.rstrip("/") + "/"
+            self.assertFalse(any(path == runtime_path or path.startswith(prefix) for path in committed))
+
+    def test_clean_clone_can_generate_and_validate_runtime_artifacts(self):
+        temporary, repository = self.copy_repository()
+        self.addCleanup(temporary.cleanup)
+        for relative in RUNTIME_ONLY_PATHS:
+            path = repository / relative
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.exists():
+                path.unlink()
+        self.assertEqual(check_generated(repository), 0)
+        generate(repository, harness="all", docs=True)
+        findings = validate_repo(repository, require_generated=True)
+        self.assertEqual(
+            [finding for finding in findings if finding.severity == "error"],
+            [],
+            [f"{finding.path}: {finding.message}" for finding in findings if finding.severity == "error"],
+        )
 
     def test_multiple_plugins_are_generated_and_catalogued(self):
         temporary, repository = self.copy_repository()

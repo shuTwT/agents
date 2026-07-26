@@ -2,3 +2,19 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Generated harness runtime trees. The source of truth lives under plugins/.
+# Regenerate these locally with `make generate-all`; do not commit them.
+/.codex/
+/.opencode/
+/opencode.json
+/.copilot/
+/agents/
+/skills/
+/commands/
+
+# Lightweight install registries remain tracked:
+#   .agents/plugins/marketplace.json
+#   plugins/*/.codex-plugin/plugin.json
+#   .cursor-plugin/
+#   gemini-extension.json

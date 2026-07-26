@@ -76,7 +76,23 @@ def _harness_doc() -> str:
                 capability.notes,
             )) + " |"
         )
-    lines.extend(["", "## 降级规则", "", "- Codex Command 转换为 Skill，并将工具限制降级为 workspace sandbox。", "- Gemini Command 转换为 TOML；协议较大时使用 `@{plugins/...}` 注入源码文件。", "- Copilot Command 转换为 `user-invocable` Skill，同时保留 command 文件。", "- Cursor 使用 marketplace/manifest 指向插件源码，不重复复制组件。", "- 未被目标 harness 支持的 frontmatter 字段会在生成日志中输出 warning。", ""])
+    lines.extend([
+        "",
+        "## 发布与跟踪策略",
+        "",
+        "- Git 只提交 Codex Registry、插件内 Codex Manifest、Cursor Registry/Manifest、`gemini-extension.json` 和本目录文档。",
+        "- `.codex/`、`.opencode/`、`.copilot/` 以及 Gemini 的 `agents/`、`skills/`、`commands/` 是本地运行时生成物，默认由 Git 忽略。",
+        "- 使用 `make generate-all` 重建运行时产物；使用 `make check-drift` 检查应提交的轻量生成物。",
+        "",
+        "## 降级规则",
+        "",
+        "- Codex Command 转换为 Skill，并将工具限制降级为 workspace sandbox。",
+        "- Gemini Command 转换为 TOML；协议较大时使用 `@{plugins/...}` 注入源码文件。",
+        "- Copilot Command 转换为 `user-invocable` Skill，同时保留 command 文件。",
+        "- Cursor 使用 marketplace/manifest 指向插件源码，不重复复制组件。",
+        "- 未被目标 harness 支持的 frontmatter 字段会在生成日志中输出 warning。",
+        "",
+    ])
     return "\n".join(lines)
 
 

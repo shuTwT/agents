@@ -44,7 +44,15 @@ def add(findings: list[GardenFinding], root: Path, kind: str, severity: str, pat
 def check_drift(root: Path, findings: list[GardenFinding]) -> None:
     differences = find_generated_drift(root)
     for difference in differences:
-        add(findings, root, "generated-drift", "error", root, difference, "Run `make generate-all` and commit generated files.")
+        add(
+            findings,
+            root,
+            "generated-drift",
+            "error",
+            root,
+            difference,
+            "Run `make generate-all` and commit only the lightweight registries and catalogs.",
+        )
 
 
 def check_context(root: Path, findings: list[GardenFinding]) -> None:

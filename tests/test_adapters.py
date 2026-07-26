@@ -27,24 +27,27 @@ class AdapterTests(unittest.TestCase):
             self.assertIn("inherit", MODEL_ALIASES[harness])
 
     def test_all_harness_outputs_exist_and_parse(self):
+        temporary, repository = self.copy_repository()
+        self.addCleanup(temporary.cleanup)
+        generate(repository, harness="all", docs=True)
         expected = [
-            ROOT / ".agents/plugins/marketplace.json",
-            ROOT / ".cursor-plugin/marketplace.json",
-            ROOT / "gemini-extension.json",
-            ROOT / ".copilot/agents/feishu-open-platform__feishu-api-developer.agent.md",
-            ROOT / "agents/feishu-open-platform__feishu-api-developer.md",
-            ROOT / "skills/feishu-open-platform__feishu-api-integration/SKILL.md",
-            ROOT / "commands/feishu-open-platform/api-integration.toml",
+            repository / ".agents/plugins/marketplace.json",
+            repository / ".cursor-plugin/marketplace.json",
+            repository / "gemini-extension.json",
+            repository / ".copilot/agents/feishu-open-platform__feishu-api-developer.agent.md",
+            repository / "agents/feishu-open-platform__feishu-api-developer.md",
+            repository / "skills/feishu-open-platform__feishu-api-integration/SKILL.md",
+            repository / "commands/feishu-open-platform/api-integration.toml",
         ]
         for path in expected:
             self.assertTrue(path.is_file(), path)
 
-        json.loads((ROOT / ".cursor-plugin/marketplace.json").read_text(encoding="utf-8"))
-        json.loads((ROOT / "gemini-extension.json").read_text(encoding="utf-8"))
-        tomllib.loads((ROOT / "commands/feishu-open-platform/api-integration.toml").read_text(encoding="utf-8"))
+        json.loads((repository / ".cursor-plugin/marketplace.json").read_text(encoding="utf-8"))
+        json.loads((repository / "gemini-extension.json").read_text(encoding="utf-8"))
+        tomllib.loads((repository / "commands/feishu-open-platform/api-integration.toml").read_text(encoding="utf-8"))
 
         agent_fields, _ = parse_frontmatter(
-            (ROOT / ".copilot/agents/feishu-open-platform__feishu-api-developer.agent.md").read_text(encoding="utf-8")
+            (repository / ".copilot/agents/feishu-open-platform__feishu-api-developer.agent.md").read_text(encoding="utf-8")
         )
         self.assertEqual(agent_fields["name"], "feishu-open-platform__feishu-api-developer")
 
@@ -76,7 +79,10 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(fields["model"], "gemini-2.5-pro")
 
     def test_copilot_command_is_manual_skill(self):
-        fields, _ = parse_frontmatter((ROOT / ".copilot/skills/feishu-open-platform-api-integration/SKILL.md").read_text(encoding="utf-8"))
+        temporary, repository = self.copy_repository()
+        self.addCleanup(temporary.cleanup)
+        generate(repository, harness="copilot", docs=False)
+        fields, _ = parse_frontmatter((repository / ".copilot/skills/feishu-open-platform-api-integration/SKILL.md").read_text(encoding="utf-8"))
         self.assertTrue(fields["user-invocable"])
         self.assertTrue(fields["disable-model-invocation"])
 

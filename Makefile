@@ -31,13 +31,13 @@ check-drift:
 garden:
 	$(PYTHON) tools/garden.py $(if $(STRICT),--strict)
 
-release-check: generate-all
-	$(PYTHON) tools/validate.py --strict
+release-check: check-drift
+	$(PYTHON) tools/validate.py --no-generated --strict
 
 validate: generate-all
 	$(PYTHON) tools/validate.py --strict
 
-test: generate-all
+test:
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:

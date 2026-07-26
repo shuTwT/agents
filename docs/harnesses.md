@@ -22,6 +22,12 @@
 | `gemini` | yes | yes | no | yes | yes | no | 150 lines | none | no | 命令输出为 TOML。 |
 | `copilot` | no | yes | no | yes | yes | no | 150 lines | none | no | Command 映射为可手动调用 Skill。 |
 
+## 发布与跟踪策略
+
+- Git 只提交 Codex Registry、插件内 Codex Manifest、Cursor Registry/Manifest、`gemini-extension.json` 和本目录文档。
+- `.codex/`、`.opencode/`、`.copilot/` 以及 Gemini 的 `agents/`、`skills/`、`commands/` 是本地运行时生成物，默认由 Git 忽略。
+- 使用 `make generate-all` 重建运行时产物；使用 `make check-drift` 检查应提交的轻量生成物。
+
 ## 降级规则
 
 - Codex Command 转换为 Skill，并将工具限制降级为 workspace sandbox。

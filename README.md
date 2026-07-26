@@ -17,16 +17,16 @@
 ```text
 .
 ├── .claude-plugin/marketplace.json      # Claude Code 市场源
-├── .agents/plugins/marketplace.json     # Codex 市场清单
-├── .cursor-plugin/                      # Cursor marketplace manifest
-├── .copilot/                            # Copilot generated agents/skills/commands
-├── agents/, skills/, commands/          # Gemini generated artifacts
-├── gemini-extension.json                # Gemini extension manifest
+├── .agents/plugins/marketplace.json     # 已提交的 Codex 市场清单
+├── .cursor-plugin/                      # 已提交的 Cursor Registry/Manifest
+├── gemini-extension.json                # 已提交的 Gemini 轻量 Manifest
 ├── plugins/feishu-open-platform/        # 唯一插件源码
 ├── docs/                                # 自动生成的插件、Agent、Skill、Command、Harness 目录
 ├── tools/                               # 生成器和校验器
 └── tests/                               # 市场与生成器测试
 ```
+
+运行 `make generate-all` 后，还会在本地生成 `.codex/`、`.opencode/`、`.copilot/` 以及 Gemini 的 `agents/`、`skills/`、`commands/`。这些转换树体积会随插件数量增长，因此由 Git 忽略，不进入提交。
 
 ## 本地检查
 
@@ -39,6 +39,6 @@ make test
 make release-check
 ```
 
-`plugins/` 和 `.claude-plugin/marketplace.json` 是唯一源码；`.codex/`、`.opencode/`、`opencode.json`、`.codex-plugin/`、`.cursor-plugin/`、`.copilot/`、Gemini 根目录产物以及 `docs/` 都由生成器维护。CI 会在生成后检查提交内容是否发生漂移。
+`plugins/` 和 `.claude-plugin/marketplace.json` 是唯一源码。Git 只提交 `.agents/plugins/marketplace.json`、插件内 `.codex-plugin/plugin.json`、`.cursor-plugin/`、`gemini-extension.json` 和 `docs/` 等轻量生成物；其他 Harness 转换树在 clone 后按需生成。CI 会检查轻量生成物漂移，并重新生成全部运行时产物进行结构校验和测试。
 
 版本采用手动 SemVer 和 `CHANGELOG.md`。当前支持 Claude Code、Codex、OpenCode、Cursor、Gemini CLI 和 GitHub Copilot；不安装或调用真实 CLI，不内置飞书 MCP 配置，也不读取或保存飞书凭证。

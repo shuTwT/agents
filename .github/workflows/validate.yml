@@ -17,10 +17,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Generate all harness artifacts
-        run: make generate-all
-      - name: Check generated artifact drift
+      - name: Check committed registry and catalog drift
         run: make check-drift
+      - name: Generate all harness runtime artifacts
+        run: make generate-all
       - name: Run repository garden
         run: make garden STRICT=1
       - name: Generate and validate marketplace artifacts
