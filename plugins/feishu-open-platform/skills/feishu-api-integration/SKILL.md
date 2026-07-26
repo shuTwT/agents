@@ -12,7 +12,7 @@ description: 为 TypeScript/Node.js 项目设计和实现飞书开放平台 API 
 1. 说明业务目标、数据对象、调用方和运行环境。
 2. 检索官方文档，确认接口、权限、token 类型、请求/响应字段和限制。
 3. 记录已确认事实、推断和待确认问题。
-4. 生成 TypeScript/Node.js 客户端、配置模板和测试。
+4. 设计 TypeScript/Node.js 客户端、配置和测试方案。
 5. 检查分页、重试、超时、幂等、错误映射和敏感信息日志。
 6. 给出最小可运行验证步骤和上线前检查清单。
 
@@ -27,9 +27,8 @@ description: 为 TypeScript/Node.js 项目设计和实现飞书开放平台 API 
 ## 交付物
 
 - API 选择和权限矩阵。
-- TypeScript 类型、请求函数和错误类型。
-- `.env.example`，只包含变量名，不包含真实值。
-- 单元测试或请求 mock。
+- TypeScript 类型、请求函数和错误类型的实现建议。
+- 配置项和单元测试/mock 的设计建议。
 - 未确认事项和手工验证步骤。
 
-详细检查项见 `references/api-contract-checklist.md`；客户端模板见 `assets/typescript/`。
+详细检查项见 `references/api-contract-checklist.md`。
