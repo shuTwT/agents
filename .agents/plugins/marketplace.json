@@ -1,0 +1,27 @@
+{
+  "name": "feishu-agents",
+  "metadata": {
+    "description": "Chinese-first agent workflows for Feishu Open Platform development",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "feishu-open-platform",
+      "description": "飞书开放平台 API 集成开发工作流，面向 TypeScript/Node.js 项目",
+      "version": "0.1.0",
+      "author": {
+        "name": "shuTwT",
+        "url": "https://github.com/shuTwT"
+      },
+      "source": {
+        "source": "local",
+        "path": "./plugins/feishu-open-platform"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coding"
+    }
+  ]
+}

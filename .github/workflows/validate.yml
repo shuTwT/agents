@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check generated artifact drift
+        run: make check-drift
+      - name: Generate and validate marketplace artifacts
+        run: make validate
+      - name: Run tests
+        run: make test
+      - name: Check release metadata
+        run: make release-check
